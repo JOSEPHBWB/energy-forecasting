@@ -55,3 +55,53 @@ def test_storage_milp_feasible_and_terminal_soc():
     assert abs(d["soc_mwh"][-1] - spec.terminal_soc_mwh) < 1e-6
     assert np.all(d["charge_mw"] * d["discharge_mw"] < 1e-7)
     assert realized_revenue(d, prices) > 0
+
+from energy_forecasting.base_forecaster import SeasonalBlendForecaster
+from energy_forecasting.forecast_engine import ForecastEngine, ForecastRequest, PredictionStore
+
+
+def _forecast_job(frame, model, origin, horizon=24):
+    import pandas as pd
+    history = frame.iloc[:origin].copy()
+    history["price"] = history["price_real_time"]
+    future = frame.iloc[origin:origin + horizon].copy()
+    future["price"] = future["price_real_time"]
+    req = ForecastRequest.from_frames(
+        series_id="test_rt", history=history, future=future, model_name=model.name
+    )
+    return req, history, future
+
+
+def test_request_cache_supports_partial_hits(tmp_path):
+    frame = make_synthetic_market(n_days=40, seed=3)
+    model = SeasonalBlendForecaster()
+    store = PredictionStore(tmp_path / "forecast_cache")
+    engine = ForecastEngine(model, store)
+    jobs = [_forecast_job(frame, model, 30 * 24 + i * 24) for i in range(4)]
+
+    cold = engine.run(jobs)
+    assert cold.cache_hits == 0
+    assert cold.cache_misses == 4
+
+    store.remove(jobs[1][0])
+    store.remove(jobs[3][0])
+    partial = engine.run(jobs)
+    assert partial.cache_hits == 2
+    assert partial.cache_misses == 2
+    assert partial.hit_rate == 0.5
+
+    warm = engine.run(jobs)
+    assert warm.cache_hits == 4
+    assert warm.cache_misses == 0
+    for a, b in zip(cold.predictions, warm.predictions):
+        assert np.allclose(a, b)
+
+
+def test_request_key_changes_when_context_changes():
+    frame = make_synthetic_market(n_days=40, seed=4)
+    model = SeasonalBlendForecaster()
+    a = _forecast_job(frame, model, 30 * 24)[0]
+    changed = frame.copy()
+    changed.loc[10, "price_real_time"] += 1.0
+    b = _forecast_job(changed, model, 30 * 24)[0]
+    assert a.cache_key() != b.cache_key()
