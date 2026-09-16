@@ -1,6 +1,6 @@
 # Electricity Price Forecasting + Storage Dispatch
 
-This repository is an independent public implementation of forecasting and computational-efficiency ideas I worked on during my research internship. It uses synthetic data and does not contain FutureBoosting source code, private lab code, or private market data. The full experiment is designed to run on a normal laptop, with Chronos-2 available as an optional backend.
+This repository is an independent public implementation of forecasting and computational-efficiency ideas I worked on during my research. The full experiment is designed to run on a normal laptop, with Chronos-2 available as an optional backend.
 
 The project has four parts:
 
